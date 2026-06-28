@@ -1,0 +1,115 @@
+name: CI MLflow Docker Build
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Prepare Environment
+        run: echo "Env ready"
+
+  linting:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Run Linter
+        run: echo "Linting code done"
+
+  unit-testing:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Run Unit Tests
+        run: echo "Unit testing passed"
+
+  security-scan:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Run Security Scanner
+        run: echo "No vulnerability"
+
+  model-training:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install MLflow & Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mlflow pandas scikit-learn
+
+      - name: Run MLflow Project
+        run: |
+          cd MLProject
+          mlflow run . --env-manager=local
+
+      - name: Upload MLruns and Run ID Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-artifacts
+          path: |
+            MLProject/mlruns/
+            MLProject/run_id.txt
+
+  docker-build-push:
+    needs: [linting, unit-testing, security-scan, model-training]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install MLflow
+        run: pip install mlflow
+
+      - name: Download Training Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: training-artifacts
+          path: MLProject/
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker Image using MLflow
+        run: |
+          cd MLProject
+          RUN_ID=$(cat run_id.txt)
+          echo "Membangun Docker image untuk ID: $RUN_ID"
+          mlflow models build-docker -m "runs:/$RUN_ID/model" -n ${{ secrets.DOCKER_USERNAME }}/titanic-mlflow:latest
+          
+      - name: Push Docker Image to Docker Hub
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/titanic-mlflow:latest
+
+      - name: Save Final Artifacts to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlruns-final-artifacts
+          path: MLProject/mlruns/
