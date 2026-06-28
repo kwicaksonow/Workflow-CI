@@ -1,0 +1,52 @@
+name: CI MLflow Docker Build
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4 
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install MLflow & Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install mlflow pandas scikit-learn
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Run MLflow Project
+      run: |
+        cd MLProject
+        mlflow run . --env-manager=local
+        
+    - name: Build Docker Image using MLflow
+      run: |
+        cd MLProject
+        RUN_ID=$(cat run_id.txt)
+        echo "Membangun Docker image untuk ID: $RUN_ID"
+        mlflow models build-docker -m "runs:/$RUN_ID/model" -n ${{ secrets.DOCKER_USERNAME }}/titanic-mlflow:latest
+        
+    - name: Push Docker Image to Docker Hub
+      run: |
+        docker push ${{ secrets.DOCKER_USERNAME }}/titanic-mlflow:latest
+        
+    # MENGGUNAKAN VERSI 4 DI SINI UNTUK MENGATASI ERROR
+    - name: Save Artifacts to GitHub
+      uses: actions/upload-artifact@v4
+      with:
+        name: mlruns-artifacts
+        path: MLProject/mlruns/
